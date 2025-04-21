@@ -11,8 +11,8 @@
 // 添加ESP32分区支持
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
-#include <nvs_flash.h>
-#include <nvs.h>
+#include "nvs_settings.h"
+#include "wifi_nvs_connect.h"
 
 #define PIN_LED 48
 #define PIN_RED_LED 47
@@ -36,6 +36,8 @@ using namespace std;
 
 USBCDC USBSerial; // 创建CDC串口实例
 
+NvsSettings settings;
+
 typedef struct {
   u32_t id;
   String name;
@@ -48,7 +50,7 @@ LGFX tft;
 LGFX_Sprite sp(&tft);
 Audio audio;
 int curIndex = 0;
-int curVolume = 3;
+int curVolume = 5;
 Adafruit_NeoPixel pixels(4, PIN_LED, NEO_GRB + NEO_KHZ800);
 Adafruit_AHTX0 aht;
 std::map<u32_t, OneButton *> buttons;
@@ -183,6 +185,10 @@ void inline initPixels() {
 }
 
 void inline autoConfigWifi() {
+  if (try_connect_wifi_from_nvs()) {
+    tft.println("WiFi Connected from NVS!");
+    return;
+  }
   tft.println("Start WiFi Connect!");
   WiFi.mode(WIFI_MODE_STA);
   WiFi.begin();
@@ -322,6 +328,7 @@ void nextVolume(int offset) {
   if (vol >= 0 && vol <= 21) {
     curVolume = vol;
     audio.setVolume(curVolume);
+    settings.setInt("radio_volume", curVolume);
     sprintf(buf, "音量: %d", curVolume);
     sp.createSprite(120, 16);
     sp.drawString(buf, 8, 0);
@@ -338,6 +345,7 @@ void playNext(int offset) {
   } else if (curIndex < 0) {
     curIndex += total;
   }
+  settings.setInt("radio_index", curIndex);
   auto radio = radios[curIndex];
   sprintf(buf, FM_URL, radio.id);
   audio.connecttohost(buf);
@@ -364,10 +372,12 @@ void onButtonClick(void *p) {
     audio.pauseResume();
     break;
   case PIN_KEY_ADD:
-    playNext(1);
+    //playNext(1);
+    nextVolume(1);
     break;
   case PIN_KEY_MINUS:
-    playNext(-1);
+    //playNext(-1);
+    nextVolume(-1);
     break;
   default:
     break;
@@ -378,10 +388,12 @@ void onButtonDoubleClick(void *p) {
   u32_t pin = (u32_t)p;
   switch (pin) {
   case PIN_KEY_ADD:
-    nextVolume(1);
+    //nextVolume(1);
+    playNext(1);
     break;
   case PIN_KEY_MINUS:
-    nextVolume(-1);
+    //nextVolume(-1);
+    playNext(-1);
     break;
   default:
     break;
@@ -434,6 +446,9 @@ void setup() {
   USBSerial.begin(115200);
   USB.begin();
   USBSerial.println("Hello ESP-S3(USB Model)!!");
+  settings.begin();
+  curVolume = settings.getInt("radio_volume", 5);
+  curIndex  = settings.getInt("radio_index", 0);
   initTFTDevice();
   initAHT20Wire();
   setupButtons();
