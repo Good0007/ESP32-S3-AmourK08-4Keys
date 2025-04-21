@@ -6,6 +6,13 @@
 #include <HTTPClient.h>
 #include <OneButton.h>
 #include <map>
+#include "USB.h"
+#include "USBCDC.h"
+// 添加ESP32分区支持
+#include <esp_ota_ops.h>
+#include <esp_partition.h>
+#include <nvs_flash.h>
+#include <nvs.h>
 
 #define PIN_LED 48
 #define PIN_RED_LED 47
@@ -27,6 +34,8 @@ using namespace std;
 #define FONT16 &fonts::efontCN_16
 #define FM_URL "http://lhttp.qtfm.cn/live/%d/64k.mp3"
 
+USBCDC USBSerial; // 创建CDC串口实例
+
 typedef struct {
   u32_t id;
   String name;
@@ -39,7 +48,7 @@ LGFX tft;
 LGFX_Sprite sp(&tft);
 Audio audio;
 int curIndex = 0;
-int curVolume = 6;
+int curVolume = 3;
 Adafruit_NeoPixel pixels(4, PIN_LED, NEO_GRB + NEO_KHZ800);
 Adafruit_AHTX0 aht;
 std::map<u32_t, OneButton *> buttons;
@@ -255,6 +264,59 @@ void inline setupOTAConfig() {
   tft.println(buf);
 }
 
+// 添加在其他工具函数附近，例如setupOTAConfig()函数后面
+void switch_to_other_app() {
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    const esp_partition_t *target = esp_ota_get_next_update_partition(NULL);
+    
+    if (target != NULL) {
+      //Serial.printf("当前运行分区: %s (0x%lx)\n", running->label, running->address);
+      //Serial.printf("切换至分区: %s (0x%lx)\n", target->label, target->address);
+      
+      // 在屏幕上显示切换信息
+      tft.clear();
+      tft.setTextColor(TFT_WHITE, TFT_BLACK);
+      //sprintf(buf, "当前分区: %s", running->label);
+      //tft.drawCentreString(buf, 120, 60, FONT16);
+      //sprintf(buf, "切换至: %s", target->label);
+      tft.drawCentreString(buf, 120, 100, FONT16);
+      tft.drawCentreString("即将切换到小智...", 120, 140, FONT16);
+      
+      delay(2000); // 显示2秒给用户时间阅读
+      
+      esp_err_t err = esp_ota_set_boot_partition(target); //设置有问题，下次启动还是从ota1
+      if (err == ESP_OK) {
+        Serial.println("分区切换成功，准备重启...");
+        // 确保设置被标记为永久有效
+        const esp_partition_t* next_boot = esp_ota_get_boot_partition();
+        if (next_boot != target) {
+          sprintf(buf, "设置分区失败: %s\n", next_boot->label);
+        }
+        delay(500);
+        ESP.restart();
+      } else {
+        Serial.printf("设置启动分区失败: %s\n", esp_err_to_name(err));
+        tft.drawCentreString("切换系统失败!", 120, 180, FONT16);
+      }
+    } else {
+      Serial.println("未找到可切换的分区");
+      tft.drawCentreString("未找到分区!", 120, 180, FONT16);
+    }
+}
+
+// 添加长按回调函数
+void onButtonLongPress(void *p) {
+    u32_t pin = (u32_t)p;
+    switch (pin) {
+    case PIN_KEY_MODE:
+      // 长按MODE键触发系统切换
+      switch_to_other_app();
+      break;
+    default:
+      break;
+    }
+}
+
 void nextVolume(int offset) {
   int vol = curVolume + offset;
   if (vol >= 0 && vol <= 21) {
@@ -332,6 +394,8 @@ void inline setupButtons() {
     auto *btn = new OneButton(pin);
     btn->attachClick(onButtonClick, (void *)pin);
     btn->attachDoubleClick(onButtonDoubleClick, (void *)pin);
+    // 添加长按事件
+    btn->attachLongPressStart(onButtonLongPress, (void *)pin);
     buttons.insert({pin, btn});
   }
 }
@@ -365,8 +429,11 @@ void inline updateAHT20Data() {
 }
 
 void setup() {
+  // 在setup()开头添加
   Serial.begin(115200);
-  Serial.println("Hello ESP-S3!!");
+  USBSerial.begin(115200);
+  USB.begin();
+  USBSerial.println("Hello ESP-S3(USB Model)!!");
   initTFTDevice();
   initAHT20Wire();
   setupButtons();
