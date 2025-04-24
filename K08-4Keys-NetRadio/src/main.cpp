@@ -13,6 +13,7 @@
 #include <esp_partition.h>
 #include "nvs_settings.h"
 #include "wifi_nvs_connect.h"
+#include "radio_list.h"
 
 #define PIN_LED 48
 #define PIN_RED_LED 47
@@ -42,6 +43,8 @@ typedef struct {
   u32_t id;
   String name;
 } RadioItem;
+
+std::vector<RadioChannel> radioChannels; // 用于存储加载的播放列表
 
 static const char *WEEK_DAYS[] = {"日", "一", "二", "三", "四", "五", "六"};
 long check1s = 0, check10ms = 0, check300ms = 0, check60s = 0;
@@ -170,6 +173,47 @@ std::vector<RadioItem> radios = {
     {20500187, "云梦音乐台"},
 };
 
+
+// 添加在其他工具函数附近，例如setupOTAConfig()函数后面
+void switch_to_other_app() {
+  const esp_partition_t *running = esp_ota_get_running_partition();
+  const esp_partition_t *target = esp_ota_get_next_update_partition(NULL);
+  
+  if (target != NULL) {
+    //Serial.printf("当前运行分区: %s (0x%lx)\n", running->label, running->address);
+    //Serial.printf("切换至分区: %s (0x%lx)\n", target->label, target->address);
+    
+    // 在屏幕上显示切换信息
+    tft.clear();
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    //sprintf(buf, "当前分区: %s", running->label);
+    //tft.drawCentreString(buf, 120, 60, FONT16);
+    //sprintf(buf, "切换至: %s", target->label);
+    tft.drawCentreString(buf, 120, 100, FONT16);
+    tft.drawCentreString("即将切换到小智...", 120, 140, FONT16);
+    
+    delay(2000); // 显示2秒给用户时间阅读
+    
+    esp_err_t err = esp_ota_set_boot_partition(target); //设置有问题，下次启动还是从ota1
+    if (err == ESP_OK) {
+      Serial.println("分区切换成功，准备重启...");
+      // 确保设置被标记为永久有效
+      const esp_partition_t* next_boot = esp_ota_get_boot_partition();
+      if (next_boot != target) {
+        sprintf(buf, "设置分区失败: %s\n", next_boot->label);
+      }
+      delay(500);
+      ESP.restart();
+    } else {
+      Serial.printf("设置启动分区失败: %s\n", esp_err_to_name(err));
+      tft.drawCentreString("切换系统失败!", 120, 180, FONT16);
+    }
+  } else {
+    Serial.println("未找到可切换的分区");
+    tft.drawCentreString("未找到分区!", 120, 180, FONT16);
+  }
+}
+
 void inline initAudioDevice() {
   audio.setPinout(PIN_I2S_BCLK, PIN_I2S_LRC, PIN_I2S_DOUT);
   audio.setVolume(curVolume);
@@ -186,8 +230,12 @@ void inline initPixels() {
 
 void inline autoConfigWifi() {
   if (try_connect_wifi_from_nvs()) {
-    tft.println("WiFi Connected from NVS!");
+    tft.println("WiFi连接成功!");
     return;
+  } else {
+    tft.println("请回到小智进行配网!");
+    delay(1000);
+    switch_to_other_app();
   }
   tft.println("Start WiFi Connect!");
   WiFi.mode(WIFI_MODE_STA);
@@ -270,46 +318,6 @@ void inline setupOTAConfig() {
   tft.println(buf);
 }
 
-// 添加在其他工具函数附近，例如setupOTAConfig()函数后面
-void switch_to_other_app() {
-    const esp_partition_t *running = esp_ota_get_running_partition();
-    const esp_partition_t *target = esp_ota_get_next_update_partition(NULL);
-    
-    if (target != NULL) {
-      //Serial.printf("当前运行分区: %s (0x%lx)\n", running->label, running->address);
-      //Serial.printf("切换至分区: %s (0x%lx)\n", target->label, target->address);
-      
-      // 在屏幕上显示切换信息
-      tft.clear();
-      tft.setTextColor(TFT_WHITE, TFT_BLACK);
-      //sprintf(buf, "当前分区: %s", running->label);
-      //tft.drawCentreString(buf, 120, 60, FONT16);
-      //sprintf(buf, "切换至: %s", target->label);
-      tft.drawCentreString(buf, 120, 100, FONT16);
-      tft.drawCentreString("即将切换到小智...", 120, 140, FONT16);
-      
-      delay(2000); // 显示2秒给用户时间阅读
-      
-      esp_err_t err = esp_ota_set_boot_partition(target); //设置有问题，下次启动还是从ota1
-      if (err == ESP_OK) {
-        Serial.println("分区切换成功，准备重启...");
-        // 确保设置被标记为永久有效
-        const esp_partition_t* next_boot = esp_ota_get_boot_partition();
-        if (next_boot != target) {
-          sprintf(buf, "设置分区失败: %s\n", next_boot->label);
-        }
-        delay(500);
-        ESP.restart();
-      } else {
-        Serial.printf("设置启动分区失败: %s\n", esp_err_to_name(err));
-        tft.drawCentreString("切换系统失败!", 120, 180, FONT16);
-      }
-    } else {
-      Serial.println("未找到可切换的分区");
-      tft.drawCentreString("未找到分区!", 120, 180, FONT16);
-    }
-}
-
 // 添加长按回调函数
 void onButtonLongPress(void *p) {
     u32_t pin = (u32_t)p;
@@ -346,10 +354,9 @@ void playNext(int offset) {
     curIndex += total;
   }
   settings.setInt("radio_index", curIndex);
-  auto radio = radios[curIndex];
-  sprintf(buf, FM_URL, radio.id);
-  audio.connecttohost(buf);
-  sprintf(buf, "%d.%s", curIndex + 1, radio.name.c_str());
+  const auto& radio = radioChannels[curIndex];
+  audio.connecttohost(radio.url.c_str());
+  snprintf(buf, sizeof(buf), "%d.%s", curIndex + 1, radio.name.c_str());
   sp.createSprite(240, 16);
   sp.drawCentreString(buf, 120, 0);
   sp.pushSprite(0, 20);
@@ -446,9 +453,15 @@ void setup() {
   USBSerial.begin(115200);
   USB.begin();
   USBSerial.println("Hello ESP-S3(USB Model)!!");
+  SPIFFS.begin(true);
+  radioChannels = RadioList::loadFromFile("/radios.json");
   settings.begin();
   curVolume = settings.getInt("radio_volume", 5);
   curIndex  = settings.getInt("radio_index", 0);
+  //防止空指针
+  if (curIndex >= radioChannels.size()) {
+    curIndex = 0;
+  }
   initTFTDevice();
   initAHT20Wire();
   setupButtons();
@@ -463,6 +476,10 @@ void setup() {
   nextVolume(0);
   playNext(0);
 }
+
+void initRadioList() {
+  
+} 
 
 void loop() {
   audio.loop();
