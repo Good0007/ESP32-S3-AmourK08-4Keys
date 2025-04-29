@@ -13,7 +13,6 @@
 #include <esp_partition.h>
 #include "nvs_settings.h"
 #include "wifi_nvs_connect.h"
-#include "radio_list.h"
 
 #define PIN_LED 48
 #define PIN_RED_LED 47
@@ -43,8 +42,6 @@ typedef struct {
   u32_t id;
   String name;
 } RadioItem;
-
-std::vector<RadioChannel> radioChannels; // 用于存储加载的播放列表
 
 static const char *WEEK_DAYS[] = {"日", "一", "二", "三", "四", "五", "六"};
 long check1s = 0, check10ms = 0, check300ms = 0, check60s = 0;
@@ -353,10 +350,10 @@ void playNext(int offset) {
   } else if (curIndex < 0) {
     curIndex += total;
   }
-  settings.setInt("radio_index", curIndex);
-  const auto& radio = radioChannels[curIndex];
-  audio.connecttohost(radio.url.c_str());
-  snprintf(buf, sizeof(buf), "%d.%s", curIndex + 1, radio.name.c_str());
+  auto radio = radios[curIndex];
+  sprintf(buf, FM_URL, radio.id);
+  audio.connecttohost(buf);
+  sprintf(buf, "%d.%s", curIndex + 1, radio.name.c_str());
   sp.createSprite(240, 16);
   sp.drawCentreString(buf, 120, 0);
   sp.pushSprite(0, 20);
@@ -448,18 +445,16 @@ void inline updateAHT20Data() {
 }
 
 void setup() {
-  // 在setup()开头添加
   Serial.begin(115200);
   USBSerial.begin(115200);
   USB.begin();
   USBSerial.println("Hello ESP-S3(USB Model)!!");
   SPIFFS.begin(true);
-  radioChannels = RadioList::loadFromFile("/radios.json");
   settings.begin();
   curVolume = settings.getInt("radio_volume", 5);
   curIndex  = settings.getInt("radio_index", 0);
   //防止空指针
-  if (curIndex >= radioChannels.size()) {
+  if (curIndex >= radios.size()) {
     curIndex = 0;
   }
   initTFTDevice();
@@ -476,10 +471,6 @@ void setup() {
   nextVolume(0);
   playNext(0);
 }
-
-void initRadioList() {
-  
-} 
 
 void loop() {
   audio.loop();
