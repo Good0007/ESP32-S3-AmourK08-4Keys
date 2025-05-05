@@ -171,6 +171,35 @@ std::vector<RadioItem> radios = {
 };
 
 
+
+std::string print_srmodel_partition_head() {
+  const esp_partition_t* partition = esp_partition_find_first(
+      ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "model"
+  );
+  if (partition) {
+      char info_str[128];
+      snprintf(info_str, sizeof(info_str), "%s,0x%08x,%d", partition->label, partition->address, partition->size);
+
+      uint8_t head[16] = {0};
+      esp_err_t err = esp_partition_read(partition, 0, head, sizeof(head));
+      if (err == ESP_OK) {
+          // 将分区头部内容转为十六进制字符串
+          char head_str[48] = {0};
+          for (int i = 0; i < sizeof(head); ++i) {
+              sprintf(head_str + i * 3, "%02X ", head[i]);
+          }
+          // 拼接分区信息和头部内容
+          std::string result = std::string(info_str) + "," + std::string(head_str);
+          return result;
+      } else {
+          return std::string("Failed to read partition: ") + esp_err_to_name(err);
+      }
+  } else {
+      return "Partition model not found!";
+  }
+}
+
+
 // 添加在其他工具函数附近，例如setupOTAConfig()函数后面
 void switch_to_other_app() {
   const esp_partition_t *running = esp_ota_get_running_partition();
@@ -189,17 +218,12 @@ void switch_to_other_app() {
     tft.drawCentreString(buf, 120, 100, FONT16);
     tft.drawCentreString("即将切换到小智...", 120, 140, FONT16);
     
-    delay(2000); // 显示2秒给用户时间阅读
+    delay(1400); // 显示2秒给用户时间阅读
     
-    esp_err_t err = esp_ota_set_boot_partition(target); //设置有问题，下次启动还是从ota1
+    esp_err_t err = esp_ota_set_boot_partition(target);
     if (err == ESP_OK) {
       Serial.println("分区切换成功，准备重启...");
-      // 确保设置被标记为永久有效
-      const esp_partition_t* next_boot = esp_ota_get_boot_partition();
-      if (next_boot != target) {
-        sprintf(buf, "设置分区失败: %s\n", next_boot->label);
-      }
-      delay(500);
+      delay(1000);
       ESP.restart();
     } else {
       Serial.printf("设置启动分区失败: %s\n", esp_err_to_name(err));
@@ -445,18 +469,13 @@ void inline updateAHT20Data() {
 }
 
 void setup() {
-  Serial.begin(115200);
+  //Serial.begin(115200);
   USBSerial.begin(115200);
   USB.begin();
   USBSerial.println("Hello ESP-S3(USB Model)!!");
-  SPIFFS.begin(true);
   settings.begin();
   curVolume = settings.getInt("radio_volume", 5);
   curIndex  = settings.getInt("radio_index", 0);
-  //防止空指针
-  if (curIndex >= radios.size()) {
-    curIndex = 0;
-  }
   initTFTDevice();
   initAHT20Wire();
   setupButtons();
@@ -464,7 +483,7 @@ void setup() {
   initAudioDevice();
   autoConfigWifi();
   startConfigTime();
-  setupOTAConfig();
+  //setupOTAConfig();
   showClientIP();
   showCurrentTime();
   updateAHT20Data();
