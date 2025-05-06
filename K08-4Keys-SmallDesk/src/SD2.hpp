@@ -17,6 +17,10 @@
 #include <TJpg_Decoder.h>
 #include <WiFiManager.h>
 #include <map>
+// 添加ESP32分区支持
+#include <esp_ota_ops.h>
+#include <esp_partition.h>
+#include "wifi_nvs_connect.h"
 
 #define PIN_WS2812 48
 #define PIN_I2C_SDA 1
@@ -75,6 +79,42 @@ int curVolume = 10;
 
 extern void onButtonClick(void *p);
 extern void onButtonDoubleClick(void *p);
+
+// 添加在其他工具函数附近，例如setupOTAConfig()函数后面
+void switch_to_other_app() {
+  const esp_partition_t *running = esp_ota_get_running_partition();
+  const esp_partition_t *target = esp_partition_find_first(
+    ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+  
+  if (target != NULL) {
+    //Serial.printf("当前运行分区: %s (0x%lx)\n", running->label, running->address);
+    //Serial.printf("切换至分区: %s (0x%lx)\n", target->label, target->address);
+    tft.loadFont(ZoloFont_20);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    // 在屏幕上显示切换信息
+    tft.println("即将切换到小智....");
+
+    //sprintf(buf, "当前分区: %s", running->label);
+    //tft.drawCentreString(buf, 120, 60, FONT16);
+    //sprintf(buf, "切换至: %s", target->label);
+    
+    delay(1400); // 显示2秒给用户时间阅读
+    
+    esp_err_t err = esp_ota_set_boot_partition(target);
+    if (err == ESP_OK) {
+      Serial.println("分区切换成功，准备重启...");
+      delay(1000);
+      ESP.restart();
+    } else {
+      Serial.printf("设置启动分区失败: %s\n", esp_err_to_name(err));
+      tft.println("切换系统失败!");
+    }
+  } else {
+    Serial.println("未找到可切换的分区");
+    tft.println("未找到分区!");
+  }
+}
+
 
 void inline tellCurTime() {
   digitalWrite(PIN_RED_LED, HIGH);
@@ -308,6 +348,14 @@ void inline initTJpeg() {
 }
 
 void inline autoConfigWifi() {
+  if (try_connect_wifi_from_nvs()) {
+    tft.println("WiFi连接成功!");
+    return;
+  } else {
+    tft.println("请回到小智进行配网!");
+    delay(1000);
+    switch_to_other_app();
+  }
   wm.setAPCallback([](WiFiManager *_wm) {
     tft.loadFont(ZoloFont_20);
     tft.println("WiFi Failed!");
