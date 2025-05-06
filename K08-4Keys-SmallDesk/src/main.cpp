@@ -2,6 +2,7 @@
 
 uint64_t ms100ms = 0, ms300ms = 0, ms2s = 0, ms10min = 0;
 
+
 void onButtonClick(void *p) {
   u32_t pin = (u32_t)p;
   switch (pin) {
@@ -31,6 +32,22 @@ void onButtonDoubleClick(void *p) {
   }
 }
 
+void onButtonLongPress(void *p) {
+  u32_t pin = (u32_t)p;
+  switch (pin) {
+  case PIN_KEY_MODE:
+    //切换系统
+    switch_to_other_app();
+    break;
+  case PIN_KEY_ADD:
+    break;
+  case PIN_KEY_MINUS:
+    break;
+  default:
+    break;
+  }
+}
+
 void run10minTask() { getCityWeater(); }
 
 void run2sTask() {
@@ -46,6 +63,7 @@ void run300msTask() {
 }
 
 void run100msTask() { animationOneFrame(); }
+
 
 void setup() {
   Serial.begin(115200);

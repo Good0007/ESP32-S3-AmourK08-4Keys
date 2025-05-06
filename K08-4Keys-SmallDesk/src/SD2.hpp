@@ -48,7 +48,7 @@
 #define FONT_COLOR_SEC 0xEC1D
 
 const String WEEK_DAYS[7] = {"日", "一", "二", "三", "四", "五", "六"};
-String cityCode = "101280601";
+String cityCode = "101010100";
 Adafruit_NeoPixel pixels(NUM_LEDS, PIN_WS2812, NEO_GRB + NEO_KHZ800);
 TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite clk = TFT_eSprite(&tft);
@@ -79,25 +79,23 @@ int curVolume = 10;
 
 extern void onButtonClick(void *p);
 extern void onButtonDoubleClick(void *p);
+//添加长按事件，切换系统
+extern void onButtonLongPress(void *p);
+
 
 // 添加在其他工具函数附近，例如setupOTAConfig()函数后面
 void switch_to_other_app() {
   const esp_partition_t *running = esp_ota_get_running_partition();
-  const esp_partition_t *target = esp_partition_find_first(
-    ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+  const esp_partition_t *target = esp_ota_get_next_update_partition(NULL);
   
   if (target != NULL) {
-    //Serial.printf("当前运行分区: %s (0x%lx)\n", running->label, running->address);
-    //Serial.printf("切换至分区: %s (0x%lx)\n", target->label, target->address);
-    tft.loadFont(ZoloFont_20);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    // 在屏幕上显示切换信息
-    tft.println("即将切换到小智....");
-
-    //sprintf(buf, "当前分区: %s", running->label);
-    //tft.drawCentreString(buf, 120, 60, FONT16);
-    //sprintf(buf, "切换至: %s", target->label);
     
+    // 在屏幕上显示切换信息
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.loadFont(ZoloFont_20);
+    tft.drawCentreString("Restarting...", 120, 140, 240);
+    tft.unloadFont();
     delay(1400); // 显示2秒给用户时间阅读
     
     esp_err_t err = esp_ota_set_boot_partition(target);
@@ -107,11 +105,17 @@ void switch_to_other_app() {
       ESP.restart();
     } else {
       Serial.printf("设置启动分区失败: %s\n", esp_err_to_name(err));
-      tft.println("切换系统失败!");
+      tft.loadFont(ZoloFont_20);
+      tft.drawCentreString("Error set partition!", 120, 180, 240);
+      tft.unloadFont();
     }
   } else {
     Serial.println("未找到可切换的分区");
-    tft.println("未找到分区!");
+    tft.loadFont(ZoloFont_20);
+    tft.drawCentreString("Unknow partition!", 120, 180, 240);
+    tft.unloadFont();
+    delay(1000);
+    ESP.restart();
   }
 }
 
@@ -138,6 +142,7 @@ void inline setupButtons() {
     auto *btn = new OneButton(pin);
     btn->attachClick(onButtonClick, (void *)pin);
     btn->attachDoubleClick(onButtonDoubleClick, (void *)pin);
+    btn->attachLongPressStart(onButtonLongPress, (void *)pin);
     buttons.insert({pin, btn});
   }
 }
@@ -157,6 +162,7 @@ void inline updateAHT20Data() {
   sprintf(buf, "AHT: %.2f%%", humidity.relative_humidity);
   scrollText[7] = buf;
 }
+
 
 void inline tempWin() {
   clk.setColorDepth(8);
@@ -349,10 +355,15 @@ void inline initTJpeg() {
 
 void inline autoConfigWifi() {
   if (try_connect_wifi_from_nvs()) {
-    tft.println("WiFi连接成功!");
+    tft.loadFont(ZoloFont_20);
+    tft.println("WiFi Connected!");
+    tft.unloadFont();
+    delay(1000);
     return;
   } else {
-    tft.println("请回到小智进行配网!");
+    tft.loadFont(ZoloFont_20);
+    tft.println("WiFi Failed!");
+    tft.unloadFont();
     delay(1000);
     switch_to_other_app();
   }

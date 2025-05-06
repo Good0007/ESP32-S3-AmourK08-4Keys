@@ -170,40 +170,16 @@ std::vector<RadioItem> radios = {
     {20500187, "云梦音乐台"},
 };
 
-
-
-std::string print_srmodel_partition_head() {
-  const esp_partition_t* partition = esp_partition_find_first(
-      ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "model"
-  );
-  if (partition) {
-      char info_str[128];
-      snprintf(info_str, sizeof(info_str), "%s,0x%08x,%d", partition->label, partition->address, partition->size);
-
-      uint8_t head[16] = {0};
-      esp_err_t err = esp_partition_read(partition, 0, head, sizeof(head));
-      if (err == ESP_OK) {
-          // 将分区头部内容转为十六进制字符串
-          char head_str[48] = {0};
-          for (int i = 0; i < sizeof(head); ++i) {
-              sprintf(head_str + i * 3, "%02X ", head[i]);
-          }
-          // 拼接分区信息和头部内容
-          std::string result = std::string(info_str) + "," + std::string(head_str);
-          return result;
-      } else {
-          return std::string("Failed to read partition: ") + esp_err_to_name(err);
-      }
-  } else {
-      return "Partition model not found!";
-  }
-}
-
-
 // 添加在其他工具函数附近，例如setupOTAConfig()函数后面
-void switch_to_other_app() {
+void switch_to_other_app(bool xiaozhi) {
   const esp_partition_t *running = esp_ota_get_running_partition();
-  const esp_partition_t *target = esp_ota_get_next_update_partition(NULL);
+  const esp_partition_t *target = NULL;
+  if (xiaozhi) {
+    // 如果是小智分区，直接返回
+    target = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, NULL);
+  } else {
+    target = esp_ota_get_next_update_partition(NULL);
+  }
   
   if (target != NULL) {
     //Serial.printf("当前运行分区: %s (0x%lx)\n", running->label, running->address);
@@ -216,7 +192,11 @@ void switch_to_other_app() {
     //tft.drawCentreString(buf, 120, 60, FONT16);
     //sprintf(buf, "切换至: %s", target->label);
     tft.drawCentreString(buf, 120, 100, FONT16);
-    tft.drawCentreString("即将切换到小智...", 120, 140, FONT16);
+    if (xiaozhi) {
+      tft.drawCentreString("即将切换到小智...", 120, 140, FONT16);
+    } else {
+      tft.drawCentreString("即将切换系统...", 120, 140, FONT16);
+    }
     
     delay(1400); // 显示2秒给用户时间阅读
     
@@ -256,7 +236,7 @@ void inline autoConfigWifi() {
   } else {
     tft.println("请回到小智进行配网!");
     delay(1000);
-    switch_to_other_app();
+    switch_to_other_app(true);
   }
   tft.println("Start WiFi Connect!");
   WiFi.mode(WIFI_MODE_STA);
@@ -345,7 +325,7 @@ void onButtonLongPress(void *p) {
     switch (pin) {
     case PIN_KEY_MODE:
       // 长按MODE键触发系统切换
-      switch_to_other_app();
+      switch_to_other_app(false);
       break;
     default:
       break;
