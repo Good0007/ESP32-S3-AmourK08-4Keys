@@ -6,28 +6,10 @@
 #include <HTTPClient.h>
 #include <OneButton.h>
 #include <map>
-#include "USB.h"
-#include "USBCDC.h"
-// 添加ESP32分区支持
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
 #include "nvs_settings.h"
 #include "wifi_nvs_connect.h"
-
-#define PIN_LED 48
-#define PIN_RED_LED 47
-
-#define PIN_I2S_SD 4
-#define PIN_I2S_DOUT 5
-#define PIN_I2S_BCLK 6
-#define PIN_I2S_LRC 7
-
-#define PIN_KEY_ADD 9
-#define PIN_KEY_MINUS 21
-#define PIN_KEY_MODE 14
-
-#define PIN_I2C_SDA 1
-#define PIN_I2C_SCL 2
 
 using namespace std;
 
@@ -449,24 +431,21 @@ void inline updateAHT20Data() {
 }
 
 void setup() {
-  //Serial.begin(115200);
-  USBSerial.begin(115200);
-  USB.begin();
-  USBSerial.println("Hello ESP-S3(USB Model)!!");
+  Serial.begin(115200);
   settings.begin();
   curVolume = settings.getInt("radio_volume", 5);
   curIndex  = settings.getInt("radio_index", 0);
   initTFTDevice();
-  initAHT20Wire();
+  //initAHT20Wire();
+  autoConfigWifi();
   setupButtons();
   initPixels();
   initAudioDevice();
-  autoConfigWifi();
   startConfigTime();
   //setupOTAConfig();
   showClientIP();
   showCurrentTime();
-  updateAHT20Data();
+  //updateAHT20Data();
   nextVolume(0);
   playNext(0);
 }
@@ -474,15 +453,6 @@ void setup() {
 void loop() {
   audio.loop();
   auto ms = millis();
-  if (ms - check60s > 60000) {
-    check60s = ms;
-    updateAHT20Data();
-  }
-  if (ms - check1s > 1000) {
-    check1s = ms;
-    ArduinoOTA.handle();
-    digitalWrite(PIN_RED_LED, check1s % 2 ? LOW : HIGH);
-  }
   if (ms - check300ms > 300) {
     check300ms = ms;
     showCurrentTime();
